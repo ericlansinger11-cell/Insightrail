@@ -171,28 +171,19 @@
     <button onclick="toggleTheme()">🌙 Dark/Light</button>
   </div>
 
-  <div id="portfolio" class="loading">⏳ Loading live stocks + real charts...</div>
+  <div id="portfolio" class="loading">⏳ Loading live dashboard...</div>
 
   <script>
     let isLoading = false;
     let charts = {};
     let isDark = true;
 
-    async function loadStock(ticker) {
+    async function loadDashboard() {
       try {
-        const res = await fetch(`/api/stock/${ticker}`);
+        const res = await fetch('/api/dashboard');
         return await res.json();
       } catch (e) {
-        return { error: 'Connection failed' };
-      }
-    }
-
-    async function loadChartData(ticker) {
-      try {
-        const res = await fetch(`/api/chart/${ticker}`);
-        return await res.json();
-      } catch (e) {
-        return { error: 'Chart failed' };
+        return null;
       }
     }
 
@@ -206,7 +197,7 @@
       charts[ticker] = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: labels,
+          labels,
           datasets: [{
             data: prices,
             borderColor:
@@ -256,7 +247,6 @@
 
     async function loadPortfolio() {
       if (isLoading) return;
-
       isLoading = true;
 
       const refreshBtn = document.getElementById('refreshBtn');
@@ -264,60 +254,54 @@
       refreshBtn.textContent = '⏳ Loading...';
 
       const portfolioDiv = document.getElementById('portfolio');
-      portfolioDiv.innerHTML = '<div class="loading">⏳ Loading live stocks + real charts...</div>';
+      portfolioDiv.innerHTML = '<div class="loading">⏳ Loading live dashboard...</div>';
 
       try {
-        const tickers = ['AAPL', 'MSFT', 'SPY'];
-        const results = {};
+        const results = await loadDashboard();
 
-        for (const ticker of tickers) {
-          const stockData = await loadStock(ticker);
-          const chartData = await loadChartData(ticker);
-          results[ticker] = { stockData, chartData };
+        if (!results) {
+          portfolioDiv.innerHTML = '<div class="error-card">Failed to load dashboard.</div>';
+          return;
         }
 
         let html = '<div class="portfolio-grid">';
 
         for (const ticker in results) {
-          const { stockData, chartData } = results[ticker];
+          const data = results[ticker];
 
-          if (stockData.error) {
+          if (data.error) {
             html += `
               <div class="error-card">
                 <strong>${ticker}</strong><br>
-                ${stockData.error}
+                ${data.error}
               </div>
             `;
             continue;
           }
 
           const ratingClass =
-            stockData.rating.rating.includes('BUY') ? 'buy' :
-            stockData.rating.rating.includes('SELL') ? 'sell' : 'hold';
+            data.rating.rating.includes('BUY') ? 'buy' :
+            data.rating.rating.includes('SELL') ? 'sell' : 'hold';
 
           html += `
             <div class="stock-card ${ratingClass}">
               <div class="ticker">${ticker}</div>
-              <div class="price">$${stockData.price}</div>
+              <div class="price">$${data.price}</div>
               <div class="confidence">
-                ${stockData.rating.rating} ${stockData.rating.confidence ? `(${stockData.rating.confidence})` : ''}
+                ${data.rating.rating} (${data.rating.confidence})
               </div>
 
-              ${stockData.portfolio ? `
-                <div class="meta">Shares: ${stockData.portfolio.shares}</div>
-                <div class="meta">Cost Basis: $${stockData.portfolio.costPerShare}</div>
-                <div class="meta">P&L: ${stockData.portfolio.pnlPercent}%</div>
-              ` : ''}
+              <div class="meta">Shares: ${data.portfolio.shares}</div>
+              <div class="meta">Cost Basis: $${data.portfolio.costPerShare}</div>
+              <div class="meta">P&L: ${data.portfolio.pnlPercent}%</div>
 
               <div class="reasons">
-                ${stockData.rating.reasons.map(reason => `<div class="reason">${reason}</div>`).join('')}
+                ${data.rating.reasons.map(reason => `<div class="reason">${reason}</div>`).join('')}
               </div>
 
               <div class="chart-container">
                 <canvas id="chart-${ticker}"></canvas>
               </div>
-
-              ${chartData.error ? `<div class="meta" style="margin-top:10px;color:#fca5a5;">${chartData.error}</div>` : ''}
             </div>
           `;
         }
@@ -326,29 +310,23 @@
         portfolioDiv.innerHTML = html;
 
         for (const ticker in results) {
-          const { stockData, chartData } = results[ticker];
-
-          if (stockData.error || chartData.error || !chartData.points) continue;
+          const data = results[ticker];
+          if (data.error || !data.chart) continue;
 
           const canvas = document.getElementById(`chart-${ticker}`);
           if (!canvas) continue;
 
           const ratingClass =
-            stockData.rating.rating.includes('BUY') ? 'buy' :
-            stockData.rating.rating.includes('SELL') ? 'sell' : 'hold';
+            data.rating.rating.includes('BUY') ? 'buy' :
+            data.rating.rating.includes('SELL') ? 'sell' : 'hold';
 
-          const labels = chartData.points.map(point => point.time);
-          const prices = chartData.points.map(point => point.price);
+          const labels = data.chart.map(point => point.time);
+          const prices = data.chart.map(point => point.price);
 
           createChart(ticker, canvas, labels, prices, ratingClass);
         }
-
       } catch (err) {
-        portfolioDiv.innerHTML = `
-          <div class="error-card">
-            Failed to load dashboard.
-          </div>
-        `;
+        portfolioDiv.innerHTML = '<div class="error-card">Failed to load dashboard.</div>';
       } finally {
         isLoading = false;
         refreshBtn.disabled = false;
@@ -361,9 +339,7 @@
       document.body.classList.toggle('light-mode', !isDark);
 
       Object.keys(charts).forEach(ticker => {
-        if (charts[ticker]) {
-          charts[ticker].destroy();
-        }
+        if (charts[ticker]) charts[ticker].destroy();
       });
 
       charts = {};
@@ -371,7 +347,7 @@
     }
 
     loadPortfolio();
-    setInterval(loadPortfolio, 30000);
+    setInterval(loadPortfolio, 120000);
   </script>
 </body>
 </html>
