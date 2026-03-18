@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>🚀 InsightRail Trading Dashboard</title>
+  <style>
+    body { font-family: Arial; margin: 40px; background: #0a0a0a; color: white; }
+    .stock { border: 1px solid #333; padding: 20px; margin: 20px 0; border-radius: 10px; }
+    .buy { border-left: 5px solid #4ade80; }
+    .hold { border-left: 5px solid #facc15; }
+    .sell { border-left: 5px solid #ef4444; }
+    .price { font-size: 24px; font-weight: bold; }
+    .confidence { color: #60a5fa; font-weight: bold; }
+    button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 10px 0; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    .reasons { margin-top: 10px; font-size: 14px; }
+    .loading { color: #60a5fa; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>🚀 InsightRail - AI Trading Dashboard (Day 6)</h1>
+  <button id="refreshBtn" onclick="loadPortfolio()">🔄 Refresh Ratings</button>
+  
+  <div id="portfolio" class="loading">⏳ Loading stable AI ratings...</div>
+
+  <script>
+    let isLoading = false;
+
+    async function loadStock(ticker) {
+      try {
+        const res = await fetch(`/api/stocks/${ticker}`);
+        return await res.json();
+      } catch(e) {
+        return { error: 'Connection failed' };
+      }
+    }
+
+    async function loadPortfolio() {
+      if (isLoading) return;
+      
+      isLoading = true;
+      const refreshBtn = document.getElementById('refreshBtn');
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = '⏳ Loading...';
+      
+      const portfolioDiv = document.getElementById('portfolio');
+      portfolioDiv.innerHTML = '<h2>⏳ Loading stable AI ratings...</h2>';
+      
+      try {
+        const tickers = ['AAPL', 'MSFT', 'SPY'];
+        const results = {};
+        
+        for (const ticker of tickers) {
+          results[ticker] = await loadStock(ticker);
+          await new Promise(resolve => setTimeout(resolve, 300)); // Rate limit protection
+        }
+
+        let html = '<h2>📊 Your Portfolio (Stable AI Ratings)</h2>';
+        for (const ticker in results) {
+          const data = results[ticker];
+          if (data.error) {
+            html += `<div class="stock"><strong>${ticker}</strong>: ${data.error}</div>`;
+          } else {
+            const ratingClass = data.rating.rating.includes('BUY') ? 'buy' : 
+                               data.rating.rating.includes('SELL') ? 'sell' : 'hold';
+            html += `
+              <div class="stock ${ratingClass}">
+                <div><strong>${ticker}</strong></div>
+                <div class="price">$${data.price}</div>
+                <div class="confidence">${data.rating.rating} (${data.rating.confidence})</div>
+                ${data.portfolio ? `
+                  <div>PnL: ${data.portfolio.pnlPercent}%</div>
+                  <div>Shares: ${data.portfolio.shares}</div>
+                ` : ''}
+                <div class="reasons"><strong>Why:</strong> ${data.rating.reasons.join(', ')}</div>
+              </div>
+            `;
+          }
+        }
+        portfolioDiv.innerHTML = html;
+      } finally {
+        isLoading = false;
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '🔄 Refresh Ratings';
+      }
+    }
+
+    // Auto load + refresh every 30s
+    loadPortfolio();
+    setInterval(loadPortfolio, 30000);
+  </script>
+</body>
+</html>
