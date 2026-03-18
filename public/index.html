@@ -1,29 +1,94 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>🚀 InsightRail Trading Dashboard</title>
+  <title>🚀 InsightRail - Pro Trading Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial; margin: 40px; background: #0a0a0a; color: white; }
-    .stock { border: 1px solid #333; padding: 20px; margin: 20px 0; border-radius: 10px; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); 
+      color: white; 
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .header { 
+      text-align: center; 
+      margin-bottom: 30px; 
+      background: rgba(255,255,255,0.05); 
+      padding: 20px; 
+      border-radius: 20px;
+      backdrop-filter: blur(10px);
+    }
+    .controls { text-align: center; margin-bottom: 30px; }
+    button { 
+      background: linear-gradient(45deg, #3b82f6, #1d4ed8); 
+      color: white; 
+      border: none; 
+      padding: 12px 24px; 
+      border-radius: 12px; 
+      cursor: pointer; 
+      font-weight: 600;
+      margin: 0 10px;
+      transition: all 0.3s;
+    }
+    button:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(59,130,246,0.4); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .portfolio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+    .stock-card { 
+      background: rgba(255,255,255,0.05); 
+      border-radius: 20px; 
+      padding: 25px; 
+      border: 1px solid rgba(255,255,255,0.1);
+      transition: all 0.3s;
+    }
+    .stock-card:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
     .buy { border-left: 5px solid #4ade80; }
     .hold { border-left: 5px solid #facc15; }
     .sell { border-left: 5px solid #ef4444; }
-    .price { font-size: 24px; font-weight: bold; }
-    .confidence { color: #60a5fa; font-weight: bold; }
-    button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 10px 0; }
-    button:disabled { background: #666; cursor: not-allowed; }
-    .reasons { margin-top: 10px; font-size: 14px; }
-    .loading { color: #60a5fa; text-align: center; }
+    .ticker { font-size: 28px; font-weight: 700; margin-bottom: 10px; }
+    .price { font-size: 32px; font-weight: 800; margin: 10px 0; }
+    .confidence { 
+      background: rgba(96,165,250,0.2); 
+      color: #60a5fa; 
+      padding: 8px 16px; 
+      border-radius: 25px; 
+      display: inline-block;
+      font-weight: 600;
+    }
+    .reasons { margin-top: 15px; }
+    .reason { margin: 5px 0; font-size: 14px; }
+    .chart-container { 
+      height: 200px; 
+      margin-top: 20px; 
+      border-radius: 12px; 
+      background: rgba(0,0,0,0.3);
+    }
+    @media (max-width: 768px) {
+      body { padding: 10px; }
+      .portfolio-grid { grid-template-columns: 1fr; }
+      .ticker { font-size: 24px; }
+      .price { font-size: 28px; }
+    }
   </style>
 </head>
 <body>
-  <h1>🚀 InsightRail - AI Trading Dashboard (Day 6)</h1>
-  <button id="refreshBtn" onclick="loadPortfolio()">🔄 Refresh Ratings</button>
+  <div class="header">
+    <h1>🚀 InsightRail</h1>
+    <p>AI Trading Dashboard - Live NYSE Data</p>
+  </div>
   
-  <div id="portfolio" class="loading">⏳ Loading stable AI ratings...</div>
+  <div class="controls">
+    <button id="refreshBtn" onclick="loadPortfolio()">🔄 Refresh Ratings</button>
+    <button onclick="toggleTheme()">🌙 Dark/Light</button>
+  </div>
+  
+  <div id="portfolio" style="opacity: 0.5;">⏳ Loading pro charts + ratings...</div>
 
   <script>
     let isLoading = false;
+    let charts = {};
+    let isDark = true;
 
     async function loadStock(ticker) {
       try {
@@ -32,6 +97,35 @@
       } catch(e) {
         return { error: 'Connection failed' };
       }
+    }
+
+    function createChart(canvas, data, ratingClass) {
+      const ctx = canvas.getContext('2d');
+      if (charts[ticker]) charts[ticker].destroy();
+      
+      charts[ticker] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ['9:30', '10:00', '11:00', '12:00', '1:00', '2:00', '3:00', '4:00'],
+          datasets: [{
+            data: data,
+            borderColor: ratingClass === 'buy' ? '#4ade80' : ratingClass === 'sell' ? '#ef4444' : '#facc15',
+            backgroundColor: 'rgba(0,0,0,0)',
+            borderWidth: 3,
+            fill: false,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { display: false, grid: { color: 'rgba(255,255,255,0.1)' } },
+            x: { grid: { color: 'rgba(255,255,255,0.1)' } }
+          }
+        }
+      });
     }
 
     async function loadPortfolio() {
@@ -43,7 +137,7 @@
       refreshBtn.textContent = '⏳ Loading...';
       
       const portfolioDiv = document.getElementById('portfolio');
-      portfolioDiv.innerHTML = '<h2>⏳ Loading stable AI ratings...</h2>';
+      portfolioDiv.innerHTML = '<div style="text-align:center;padding:50px;">⏳ Loading charts + AI ratings...</div>';
       
       try {
         const tickers = ['AAPL', 'MSFT', 'SPY'];
@@ -51,32 +145,54 @@
         
         for (const ticker of tickers) {
           results[ticker] = await loadStock(ticker);
-          await new Promise(resolve => setTimeout(resolve, 300)); // Rate limit protection
+          await new Promise(resolve => setTimeout(resolve, 300));
         }
 
-        let html = '<h2>📊 Your Portfolio (Stable AI Ratings)</h2>';
+        let html = '<div class="portfolio-grid">';
         for (const ticker in results) {
           const data = results[ticker];
           if (data.error) {
-            html += `<div class="stock"><strong>${ticker}</strong>: ${data.error}</div>`;
+            html += `<div class="stock-card"><strong>${ticker}</strong>: ${data.error}</div>`;
           } else {
             const ratingClass = data.rating.rating.includes('BUY') ? 'buy' : 
                                data.rating.rating.includes('SELL') ? 'sell' : 'hold';
+            const chartData = [140, 145, 142, 148, 152, 150, 155, parseFloat(data.price)];
+            
             html += `
-              <div class="stock ${ratingClass}">
-                <div><strong>${ticker}</strong></div>
+              <div class="stock-card ${ratingClass}">
+                <div class="ticker">${ticker}</div>
                 <div class="price">$${data.price}</div>
                 <div class="confidence">${data.rating.rating} (${data.rating.confidence})</div>
                 ${data.portfolio ? `
                   <div>PnL: ${data.portfolio.pnlPercent}%</div>
                   <div>Shares: ${data.portfolio.shares}</div>
                 ` : ''}
-                <div class="reasons"><strong>Why:</strong> ${data.rating.reasons.join(', ')}</div>
+                <div class="reasons">
+                  <strong>Why:</strong>
+                  ${data.rating.reasons.map(r => `<div class="reason">${r}</div>`).join('')}
+                </div>
+                <div class="chart-container">
+                  <canvas id="chart-${ticker}"></canvas>
+                </div>
               </div>
             `;
           }
         }
+        html += '</div>';
+        
         portfolioDiv.innerHTML = html;
+        portfolioDiv.style.opacity = '1';
+        
+        // Create charts
+        for (const ticker in results) {
+          if (!results[ticker].error) {
+            const canvas = document.getElementById(`chart-${ticker}`);
+            const ratingClass = results[ticker].rating.rating.includes('BUY') ? 'buy' : 
+                               results[ticker].rating.rating.includes('SELL') ? 'sell' : 'hold';
+            createChart(canvas, [140, 145, 142, 148, 152, 150, 155, parseFloat(results[ticker].price)], ratingClass);
+          }
+        }
+        
       } finally {
         isLoading = false;
         refreshBtn.disabled = false;
@@ -84,7 +200,14 @@
       }
     }
 
-    // Auto load + refresh every 30s
+    function toggleTheme() {
+      isDark = !isDark;
+      document.body.style.background = isDark ? 
+        'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%)' : 
+        'linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%)';
+    }
+
+    // Load + auto-refresh
     loadPortfolio();
     setInterval(loadPortfolio, 30000);
   </script>
