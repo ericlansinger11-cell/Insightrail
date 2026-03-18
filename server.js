@@ -4,16 +4,16 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
+const API_KEY = 'HLaWIwqgorCAyVlFSUWY59fGXIX5eDMY';
+const POLYGON_URL = 'https://api.polygon.io';
+
 app.use(express.static('public'));
 app.use(express.json());
 
 // ROOT ROUTE
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'public.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
-const API_KEY = 'HLaWIwqgorCAyVlFSUWY59fGXIX5eDMY';
-const POLYGON_URL = 'https://api.polygon.io';
 
 // PRICE CACHE
 const priceCache = {};
@@ -71,6 +71,42 @@ const portfolio = {
   MSFT: { shares: 5, costPerShare: 350 },
   SPY: { shares: 20, costPerShare: 450 }
 };
+
+// CHART DATA ENDPOINT
+app.get('/api/chart/:ticker', async (req, res) => {
+  const ticker = req.params.ticker.toUpperCase();
+
+  try {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(to.getDate() - 12);
+
+    const fromStr = from.toISOString().split('T')[0];
+    const toStr = to.toISOString().split('T')[0];
+
+    const response = await fetch(
+      `${POLYGON_URL}/v2/aggs/ticker/${ticker}/range/1/day/${fromStr}/${toStr}?adjusted=true&sort=asc&limit=8&apikey=${API_KEY}`
+    );
+
+    const data = await response.json();
+
+    if (!data.results || data.results.length === 0) {
+      return res.status(404).json({ error: 'No chart data' });
+    }
+
+    const chart = data.results.map(bar => ({
+      time: new Date(bar.t).toLocaleDateString(),
+      price: bar.c
+    }));
+
+    res.json({
+      ticker,
+      points: chart
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Chart API failed', details: error.message });
+  }
+});
 
 // SINGLE STOCK
 app.get('/api/stock/:ticker', async (req, res) => {

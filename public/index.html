@@ -1,68 +1,162 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>🚀 InsightRail - Pro Trading Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); 
-      color: white; 
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+      color: white;
       min-height: 100vh;
       padding: 20px;
+      transition: background 0.3s ease, color 0.3s ease;
     }
-    .header { 
-      text-align: center; 
-      margin-bottom: 30px; 
-      background: rgba(255,255,255,0.05); 
-      padding: 20px; 
+
+    .light-mode {
+      background: linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%);
+      color: #111827;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      background: rgba(255,255,255,0.05);
+      padding: 20px;
       border-radius: 20px;
       backdrop-filter: blur(10px);
     }
-    .controls { text-align: center; margin-bottom: 30px; }
-    button { 
-      background: linear-gradient(45deg, #3b82f6, #1d4ed8); 
-      color: white; 
-      border: none; 
-      padding: 12px 24px; 
-      border-radius: 12px; 
-      cursor: pointer; 
+
+    .light-mode .header,
+    .light-mode .stock-card {
+      background: rgba(255,255,255,0.7);
+      color: #111827;
+    }
+
+    .controls {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    button {
+      background: linear-gradient(45deg, #3b82f6, #1d4ed8);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 12px;
+      cursor: pointer;
       font-weight: 600;
       margin: 0 10px;
       transition: all 0.3s;
     }
-    button:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(59,130,246,0.4); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-    .portfolio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
-    .stock-card { 
-      background: rgba(255,255,255,0.05); 
-      border-radius: 20px; 
-      padding: 25px; 
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(59,130,246,0.4);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .portfolio-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 20px;
+    }
+
+    .stock-card {
+      background: rgba(255,255,255,0.05);
+      border-radius: 20px;
+      padding: 25px;
       border: 1px solid rgba(255,255,255,0.1);
       transition: all 0.3s;
     }
-    .stock-card:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
+
+    .stock-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
+
     .buy { border-left: 5px solid #4ade80; }
     .hold { border-left: 5px solid #facc15; }
     .sell { border-left: 5px solid #ef4444; }
-    .ticker { font-size: 28px; font-weight: 700; margin-bottom: 10px; }
-    .price { font-size: 32px; font-weight: 800; margin: 10px 0; }
-    .confidence { 
-      background: rgba(96,165,250,0.2); 
-      color: #60a5fa; 
-      padding: 8px 16px; 
-      border-radius: 25px; 
+
+    .ticker {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .price {
+      font-size: 32px;
+      font-weight: 800;
+      margin: 10px 0;
+    }
+
+    .confidence {
+      background: rgba(96,165,250,0.2);
+      color: #60a5fa;
+      padding: 8px 16px;
+      border-radius: 25px;
       display: inline-block;
       font-weight: 600;
+      margin-bottom: 12px;
     }
-    .reasons { margin-top: 15px; }
-    .reason { margin: 5px 0; font-size: 14px; }
-    .chart-container { 
-      height: 200px; 
-      margin-top: 20px; 
-      border-radius: 12px; 
+
+    .meta {
+      margin-top: 10px;
+      font-size: 15px;
+      opacity: 0.9;
+    }
+
+    .reasons {
+      margin-top: 15px;
+    }
+
+    .reason {
+      margin: 5px 0;
+      font-size: 14px;
+    }
+
+    .chart-container {
+      height: 220px;
+      margin-top: 20px;
+      border-radius: 12px;
       background: rgba(0,0,0,0.3);
+      padding: 10px;
+    }
+
+    .error-card {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 20px;
+      padding: 20px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 50px;
+      font-size: 18px;
+      opacity: 0.9;
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 10px; }
+      .portfolio-grid { grid-template-columns: 1fr; }
+      .ticker { font-size: 24px; }
+      .price { font-size: 28px; }
+      button {
+        display: block;
+        width: 100%;
+        margin: 10px 0;
+      }
     }
   </style>
 </head>
@@ -71,13 +165,13 @@
     <h1>🚀 InsightRail</h1>
     <p>AI Trading Dashboard - Live Data</p>
   </div>
-  
+
   <div class="controls">
     <button id="refreshBtn" onclick="loadPortfolio()">🔄 Refresh Ratings</button>
     <button onclick="toggleTheme()">🌙 Dark/Light</button>
   </div>
-  
-  <div id="portfolio" style="opacity: 0.5;">⏳ Loading...</div>
+
+  <div id="portfolio" class="loading">⏳ Loading live stocks + real charts...</div>
 
   <script>
     let isLoading = false;
@@ -86,18 +180,25 @@
 
     async function loadStock(ticker) {
       try {
-        const res = await fetch(`/api/stock/${ticker}`); // FIXED
+        const res = await fetch(`/api/stock/${ticker}`);
         return await res.json();
-      } catch(e) {
+      } catch (e) {
         return { error: 'Connection failed' };
       }
     }
 
-    // ✅ FIXED: ticker added
-    function createChart(ticker, canvas, data, ratingClass) {
+    async function loadChartData(ticker) {
+      try {
+        const res = await fetch(`/api/chart/${ticker}`);
+        return await res.json();
+      } catch (e) {
+        return { error: 'Chart failed' };
+      }
+    }
+
+    function createChart(ticker, canvas, labels, prices, ratingClass) {
       const ctx = canvas.getContext('2d');
 
-      // destroy old chart if exists
       if (charts[ticker]) {
         charts[ticker].destroy();
       }
@@ -105,21 +206,49 @@
       charts[ticker] = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: ['9:30', '10:00', '11:00', '12:00', '1:00', '2:00', '3:00', '4:00'],
+          labels: labels,
           datasets: [{
-            data: data,
-            borderColor: ratingClass === 'buy' ? '#4ade80' : ratingClass === 'sell' ? '#ef4444' : '#facc15',
+            data: prices,
+            borderColor:
+              ratingClass === 'buy'
+                ? '#4ade80'
+                : ratingClass === 'sell'
+                ? '#ef4444'
+                : '#facc15',
             borderWidth: 3,
-            tension: 0.4
+            tension: 0.35,
+            fill: false,
+            pointRadius: 3,
+            pointHoverRadius: 5
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: {
+            legend: { display: false }
+          },
           scales: {
-            y: { display: false },
-            x: { grid: { color: 'rgba(255,255,255,0.1)' } }
+            y: {
+              ticks: {
+                color: document.body.classList.contains('light-mode') ? '#111827' : 'rgba(255,255,255,0.75)'
+              },
+              grid: {
+                color: document.body.classList.contains('light-mode')
+                  ? 'rgba(17,24,39,0.08)'
+                  : 'rgba(255,255,255,0.08)'
+              }
+            },
+            x: {
+              ticks: {
+                color: document.body.classList.contains('light-mode') ? '#111827' : 'rgba(255,255,255,0.75)'
+              },
+              grid: {
+                color: document.body.classList.contains('light-mode')
+                  ? 'rgba(17,24,39,0.08)'
+                  : 'rgba(255,255,255,0.08)'
+              }
+            }
           }
         }
       });
@@ -129,66 +258,97 @@
       if (isLoading) return;
 
       isLoading = true;
+
       const refreshBtn = document.getElementById('refreshBtn');
       refreshBtn.disabled = true;
       refreshBtn.textContent = '⏳ Loading...';
 
       const portfolioDiv = document.getElementById('portfolio');
-      portfolioDiv.innerHTML = '<div style="text-align:center;padding:50px;">⏳ Loading...</div>';
+      portfolioDiv.innerHTML = '<div class="loading">⏳ Loading live stocks + real charts...</div>';
 
       try {
         const tickers = ['AAPL', 'MSFT', 'SPY'];
         const results = {};
 
         for (const ticker of tickers) {
-          results[ticker] = await loadStock(ticker);
+          const stockData = await loadStock(ticker);
+          const chartData = await loadChartData(ticker);
+          results[ticker] = { stockData, chartData };
         }
 
         let html = '<div class="portfolio-grid">';
+
         for (const ticker in results) {
-          const data = results[ticker];
+          const { stockData, chartData } = results[ticker];
 
-          if (data.error) {
-            html += `<div class="stock-card">${ticker}: ${data.error}</div>`;
-          } else {
-            const ratingClass =
-              data.rating.rating.includes('BUY') ? 'buy' :
-              data.rating.rating.includes('SELL') ? 'sell' : 'hold';
-
+          if (stockData.error) {
             html += `
-              <div class="stock-card ${ratingClass}">
-                <div class="ticker">${ticker}</div>
-                <div class="price">$${data.price}</div>
-                <div class="confidence">${data.rating.rating}</div>
-                <div class="chart-container">
-                  <canvas id="chart-${ticker}"></canvas>
-                </div>
+              <div class="error-card">
+                <strong>${ticker}</strong><br>
+                ${stockData.error}
               </div>
             `;
+            continue;
           }
+
+          const ratingClass =
+            stockData.rating.rating.includes('BUY') ? 'buy' :
+            stockData.rating.rating.includes('SELL') ? 'sell' : 'hold';
+
+          html += `
+            <div class="stock-card ${ratingClass}">
+              <div class="ticker">${ticker}</div>
+              <div class="price">$${stockData.price}</div>
+              <div class="confidence">
+                ${stockData.rating.rating} ${stockData.rating.confidence ? `(${stockData.rating.confidence})` : ''}
+              </div>
+
+              ${stockData.portfolio ? `
+                <div class="meta">Shares: ${stockData.portfolio.shares}</div>
+                <div class="meta">Cost Basis: $${stockData.portfolio.costPerShare}</div>
+                <div class="meta">P&L: ${stockData.portfolio.pnlPercent}%</div>
+              ` : ''}
+
+              <div class="reasons">
+                ${stockData.rating.reasons.map(reason => `<div class="reason">${reason}</div>`).join('')}
+              </div>
+
+              <div class="chart-container">
+                <canvas id="chart-${ticker}"></canvas>
+              </div>
+
+              ${chartData.error ? `<div class="meta" style="margin-top:10px;color:#fca5a5;">${chartData.error}</div>` : ''}
+            </div>
+          `;
         }
+
         html += '</div>';
-
         portfolioDiv.innerHTML = html;
-        portfolioDiv.style.opacity = '1';
 
-        // ✅ FIXED: pass ticker here
         for (const ticker in results) {
-          if (!results[ticker].error) {
-            const canvas = document.getElementById(`chart-${ticker}`);
-            const ratingClass =
-              results[ticker].rating.rating.includes('BUY') ? 'buy' :
-              results[ticker].rating.rating.includes('SELL') ? 'sell' : 'hold';
+          const { stockData, chartData } = results[ticker];
 
-            createChart(
-              ticker,
-              canvas,
-              [140, 145, 142, 148, 152, 150, 155, parseFloat(results[ticker].price)],
-              ratingClass
-            );
-          }
+          if (stockData.error || chartData.error || !chartData.points) continue;
+
+          const canvas = document.getElementById(`chart-${ticker}`);
+          if (!canvas) continue;
+
+          const ratingClass =
+            stockData.rating.rating.includes('BUY') ? 'buy' :
+            stockData.rating.rating.includes('SELL') ? 'sell' : 'hold';
+
+          const labels = chartData.points.map(point => point.time);
+          const prices = chartData.points.map(point => point.price);
+
+          createChart(ticker, canvas, labels, prices, ratingClass);
         }
 
+      } catch (err) {
+        portfolioDiv.innerHTML = `
+          <div class="error-card">
+            Failed to load dashboard.
+          </div>
+        `;
       } finally {
         isLoading = false;
         refreshBtn.disabled = false;
@@ -198,9 +358,16 @@
 
     function toggleTheme() {
       isDark = !isDark;
-      document.body.style.background = isDark
-        ? 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%)'
-        : 'linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%)';
+      document.body.classList.toggle('light-mode', !isDark);
+
+      Object.keys(charts).forEach(ticker => {
+        if (charts[ticker]) {
+          charts[ticker].destroy();
+        }
+      });
+
+      charts = {};
+      loadPortfolio();
     }
 
     loadPortfolio();
