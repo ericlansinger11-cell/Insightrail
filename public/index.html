@@ -222,7 +222,9 @@
           scales: {
             y: {
               ticks: {
-                color: document.body.classList.contains('light-mode') ? '#111827' : 'rgba(255,255,255,0.75)'
+                color: document.body.classList.contains('light-mode')
+                  ? '#111827'
+                  : 'rgba(255,255,255,0.75)'
               },
               grid: {
                 color: document.body.classList.contains('light-mode')
@@ -232,7 +234,9 @@
             },
             x: {
               ticks: {
-                color: document.body.classList.contains('light-mode') ? '#111827' : 'rgba(255,255,255,0.75)'
+                color: document.body.classList.contains('light-mode')
+                  ? '#111827'
+                  : 'rgba(255,255,255,0.75)'
               },
               grid: {
                 color: document.body.classList.contains('light-mode')
@@ -347,7 +351,7 @@
     }
 
     loadPortfolio();
-    setInterval(loadPortfolio, 120000);
+    setInterval(loadPortfolio, 300000);
   </script>
 </body>
 </html>

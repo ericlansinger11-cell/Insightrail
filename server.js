@@ -19,6 +19,10 @@ const portfolio = {
 const priceCache = {};
 const chartCache = {};
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function calculateRating(ticker, price, costPerShare, pnlPercent) {
   let score = 0;
   let reasons = [];
@@ -69,18 +73,25 @@ function calculateRating(ticker, price, costPerShare, pnlPercent) {
 }
 
 async function fetchPreviousClose(ticker) {
-  if (priceCache[ticker] && Date.now() - priceCache[ticker].timestamp < 60 * 1000) {
+  if (
+    priceCache[ticker] &&
+    Date.now() - priceCache[ticker].timestamp < 5 * 60 * 1000
+  ) {
     return priceCache[ticker].data;
   }
 
   const response = await fetch(
     `${POLYGON_URL}/v2/aggs/ticker/${ticker}/prev?adjusted=true&apikey=${API_KEY}`
   );
-  const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(`Polygon stock request failed for ${ticker}`);
+    const errorBody = await response.text();
+    throw new Error(
+      `Polygon stock request failed for ${ticker}: ${response.status} ${errorBody}`
+    );
   }
+
+  const data = await response.json();
 
   if (!data.results || !Array.isArray(data.results) || data.results.length === 0) {
     throw new Error(`No price data for ${ticker}`);
@@ -101,7 +112,10 @@ async function fetchPreviousClose(ticker) {
 }
 
 async function fetchChartData(ticker) {
-  if (chartCache[ticker] && Date.now() - chartCache[ticker].timestamp < 15 * 60 * 1000) {
+  if (
+    chartCache[ticker] &&
+    Date.now() - chartCache[ticker].timestamp < 15 * 60 * 1000
+  ) {
     return chartCache[ticker].data;
   }
 
@@ -115,11 +129,15 @@ async function fetchChartData(ticker) {
   const response = await fetch(
     `${POLYGON_URL}/v2/aggs/ticker/${ticker}/range/1/day/${fromStr}/${toStr}?adjusted=true&sort=asc&apikey=${API_KEY}`
   );
-  const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(`Polygon chart request failed for ${ticker}`);
+    const errorBody = await response.text();
+    throw new Error(
+      `Polygon chart request failed for ${ticker}: ${response.status} ${errorBody}`
+    );
   }
+
+  const data = await response.json();
 
   if (!data.results || !Array.isArray(data.results) || data.results.length === 0) {
     throw new Error(`No chart data for ${ticker}`);
@@ -143,12 +161,10 @@ async function fetchChartData(ticker) {
   return result;
 }
 
-// root
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// single stock route
 app.get('/api/stock/:ticker', async (req, res) => {
   const ticker = req.params.ticker.toUpperCase();
 
@@ -173,7 +189,12 @@ app.get('/api/stock/:ticker', async (req, res) => {
             pnlPercent: pnlPercent.toFixed(1)
           }
         : null,
-      rating: calculateRating(ticker, stock.price, holding?.costPerShare || stock.price, pnlPercent)
+      rating: calculateRating(
+        ticker,
+        stock.price,
+        holding?.costPerShare || stock.price,
+        pnlPercent
+      )
     };
 
     res.json(result);
@@ -185,7 +206,6 @@ app.get('/api/stock/:ticker', async (req, res) => {
   }
 });
 
-// single chart route
 app.get('/api/chart/:ticker', async (req, res) => {
   const ticker = req.params.ticker.toUpperCase();
 
@@ -200,44 +220,51 @@ app.get('/api/chart/:ticker', async (req, res) => {
   }
 });
 
-// all-in-one dashboard route
 app.get('/api/dashboard', async (req, res) => {
   try {
     const tickers = Object.keys(portfolio);
     const results = {};
 
-    await Promise.all(
-      tickers.map(async (ticker) => {
-        try {
-          const stock = await fetchPreviousClose(ticker);
-          const chart = await fetchChartData(ticker);
-          const holding = portfolio[ticker];
+    for (const ticker of tickers) {
+      try {
+        const stock = await fetchPreviousClose(ticker);
 
-          const totalCost = holding.shares * holding.costPerShare;
-          const currentValue = holding.shares * stock.price;
-          const pnlPercent = ((currentValue - totalCost) / totalCost) * 100;
+        await sleep(400);
 
-          results[ticker] = {
+        const chart = await fetchChartData(ticker);
+
+        const holding = portfolio[ticker];
+        const totalCost = holding.shares * holding.costPerShare;
+        const currentValue = holding.shares * stock.price;
+        const pnlPercent = ((currentValue - totalCost) / totalCost) * 100;
+
+        results[ticker] = {
+          ticker,
+          price: stock.price.toFixed(2),
+          portfolio: {
+            shares: holding.shares,
+            costPerShare: holding.costPerShare,
+            totalCost: totalCost.toFixed(2),
+            currentValue: currentValue.toFixed(2),
+            pnlPercent: pnlPercent.toFixed(1)
+          },
+          rating: calculateRating(
             ticker,
-            price: stock.price.toFixed(2),
-            portfolio: {
-              shares: holding.shares,
-              costPerShare: holding.costPerShare,
-              totalCost: totalCost.toFixed(2),
-              currentValue: currentValue.toFixed(2),
-              pnlPercent: pnlPercent.toFixed(1)
-            },
-            rating: calculateRating(ticker, stock.price, holding.costPerShare, pnlPercent),
-            chart: chart.points
-          };
-        } catch (error) {
-          results[ticker] = {
-            ticker,
-            error: error.message
-          };
-        }
-      })
-    );
+            stock.price,
+            holding.costPerShare,
+            pnlPercent
+          ),
+          chart: chart.points
+        };
+
+        await sleep(400);
+      } catch (error) {
+        results[ticker] = {
+          ticker,
+          error: error.message
+        };
+      }
+    }
 
     res.json(results);
   } catch (error) {
