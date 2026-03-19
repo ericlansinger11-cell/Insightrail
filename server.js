@@ -1,17 +1,13 @@
-const express = require('express');
-const path = require('path');
+require("dotenv").config();
+const express = require("express");
+const path = require("path");
+const { fetchRelevantNews } = require("./services/newsService");
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-const POLYGON_API_KEY = 'HLaWIwqgorCAyVlFSUWY59fGXIX5eDMY';
-const NEWS_API_KEY = '904f4a0367e241fbb9f82cbdc1489984';
-
-const POLYGON_URL = 'https://api.polygon.io';
-const NEWS_URL = 'https://newsapi.org/v2/everything';
-
-app.use(express.static('public'));
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 const portfolio = {
   AAPL: { shares: 10, costPerShare: 200 },
@@ -19,12 +15,27 @@ const portfolio = {
   SPY: { shares: 20, costPerShare: 450 }
 };
 
-const priceCache = {};
-const chartCache = {};
-const newsCache = {};
+const chartCache = new Map();
+const stockCache = new Map();
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+const STOCK_TTL = 60 * 1000;
+const CHART_TTL = 5 * 60 * 1000;
+
+function getCached(map, key, ttl) {
+  const entry = map.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > ttl) {
+    map.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCached(map, key, data) {
+  map.set(key, {
+    data,
+    timestamp: Date.now()
+  });
 }
 
 function calculateRating(ticker, price, costPerShare, pnlPercent) {
@@ -34,37 +45,36 @@ function calculateRating(ticker, price, costPerShare, pnlPercent) {
   const pnlScore = Math.max(-1, Math.min(1, pnlPercent / 30));
   score += pnlScore * 0.5;
 
-  if (pnlPercent > 25) reasons.push('✅ Excellent gains');
-  else if (pnlPercent > 10) reasons.push('📈 Solid performance');
-  else if (pnlPercent < -15) reasons.push('❌ Underperforming');
+  if (pnlPercent > 25) reasons.push("✅ Excellent gains");
+  else if (pnlPercent > 10) reasons.push("📈 Solid performance");
+  else if (pnlPercent < -15) reasons.push("❌ Underperforming");
 
   const priceVsCost = (price - costPerShare) / costPerShare;
   const valueScore = Math.max(-1, Math.min(1, priceVsCost));
   score += valueScore * 0.3;
 
-  if (priceVsCost > 0.25) reasons.push('📈 Strong appreciation');
+  if (priceVsCost > 0.25) reasons.push("📈 Strong appreciation");
 
   const positionValue = price * 10;
   if (positionValue > 4000) {
     score -= 0.2;
-    reasons.push('⚠️ Large position');
+    reasons.push("⚠️ Large position");
   }
 
-  let rating;
-  let confidence;
+  let rating, confidence;
 
   if (score >= 0.45) {
-    rating = '🟢 BUY';
+    rating = "🟢 BUY";
     confidence = Math.min(95, 82 + Math.floor(score * 15));
-    reasons.push('🎯 High conviction');
+    reasons.push("🎯 High conviction");
   } else if (score >= 0.1) {
-    rating = '🟡 HOLD';
+    rating = "🟡 HOLD";
     confidence = Math.min(85, 68 + Math.floor(score * 12));
-    reasons.push('⚖️ Monitor position');
+    reasons.push("⚖️ Monitor position");
   } else {
-    rating = '🔴 SELL';
+    rating = "🔴 SELL";
     confidence = Math.min(92, 75 + Math.floor(Math.abs(score) * 18));
-    reasons.push('🚨 Reduce exposure');
+    reasons.push("🚨 Reduce exposure");
   }
 
   return {
@@ -76,304 +86,113 @@ function calculateRating(ticker, price, costPerShare, pnlPercent) {
   };
 }
 
-function getNewsQuery(ticker) {
-  const map = {
-    AAPL: 'Apple OR AAPL',
-    MSFT: 'Microsoft OR MSFT',
-    SPY: 'S&P 500 OR SPY OR ETF market'
-  };
-  return map[ticker] || ticker;
-}
-
-function analyzeHeadlineSentiment(title = '') {
-  const text = title.toLowerCase();
-
-  const positiveWords = [
-    'beat', 'beats', 'surge', 'soar', 'gain', 'gains', 'upgrade', 'upgrades',
-    'strong', 'growth', 'record', 'bullish', 'rally', 'profit', 'profits',
-    'outperform', 'buy rating', 'expands', 'optimistic'
-  ];
-
-  const negativeWords = [
-    'miss', 'misses', 'drop', 'drops', 'fall', 'falls', 'downgrade', 'downgrades',
-    'weak', 'warning', 'lawsuit', 'bearish', 'selloff', 'decline', 'loss',
-    'losses', 'cuts', 'cut', 'slump', 'recession', 'investigation'
-  ];
-
-  let score = 0;
-
-  positiveWords.forEach(word => {
-    if (text.includes(word)) score += 1;
-  });
-
-  negativeWords.forEach(word => {
-    if (text.includes(word)) score -= 1;
-  });
-
-  if (score > 0) return { label: 'Positive', score };
-  if (score < 0) return { label: 'Negative', score };
-  return { label: 'Neutral', score: 0 };
-}
-
-function summarizeNewsSentiment(articles) {
-  let total = 0;
-
-  for (const article of articles) {
-    total += article.sentiment.score;
-  }
-
-  if (total > 1) return 'Mostly positive news flow';
-  if (total < -1) return 'Mostly negative news flow';
-  return 'Mixed or neutral news flow';
-}
-
-async function fetchPreviousClose(ticker) {
-  if (
-    priceCache[ticker] &&
-    Date.now() - priceCache[ticker].timestamp < 5 * 60 * 1000
-  ) {
-    return priceCache[ticker].data;
-  }
+async function fetchPrevStock(ticker) {
+  const cached = getCached(stockCache, ticker, STOCK_TTL);
+  if (cached) return cached;
 
   const response = await fetch(
-    `${POLYGON_URL}/v2/aggs/ticker/${ticker}/prev?adjusted=true&apikey=${POLYGON_API_KEY}`
+    `https://api.polygon.io/v2/aggs/ticker/${ticker}/prev?adjusted=true&apiKey=${process.env.POLYGON_API_KEY}`
   );
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `Polygon stock request failed for ${ticker}: ${response.status} ${errorBody}`
-    );
-  }
 
   const data = await response.json();
 
-  if (!data.results || !Array.isArray(data.results) || data.results.length === 0) {
-    throw new Error(`No price data for ${ticker}`);
+  if (!response.ok) {
+    throw new Error(data.error || data.message || "Failed to fetch stock data");
   }
 
-  const latest = data.results[data.results.length - 1];
-  const result = {
-    ticker,
-    price: latest.c
-  };
-
-  priceCache[ticker] = {
-    data: result,
-    timestamp: Date.now()
-  };
-
-  return result;
+  setCached(stockCache, ticker, data);
+  return data;
 }
 
 async function fetchChartData(ticker) {
-  if (
-    chartCache[ticker] &&
-    chartCache[ticker].errorUntil &&
-    Date.now() < chartCache[ticker].errorUntil
-  ) {
-    throw new Error('Rate limited - please wait');
-  }
-
-  if (
-    chartCache[ticker] &&
-    chartCache[ticker].data &&
-    Date.now() - chartCache[ticker].timestamp < 60 * 60 * 1000
-  ) {
-    return chartCache[ticker].data;
-  }
-
-  const to = new Date();
-  const from = new Date();
-  from.setDate(to.getDate() - 60);
-
-  const fromStr = from.toISOString().split('T')[0];
-  const toStr = to.toISOString().split('T')[0];
+  const cached = getCached(chartCache, ticker, CHART_TTL);
+  if (cached) return cached;
 
   const response = await fetch(
-    `${POLYGON_URL}/v2/aggs/ticker/${ticker}/range/1/day/${fromStr}/${toStr}?adjusted=true&sort=asc&apikey=${POLYGON_API_KEY}`
+    `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/1/day/2025-01-01/2026-12-31?adjusted=true&sort=asc&limit=120&apiKey=${process.env.POLYGON_API_KEY}`
   );
 
-  if (!response.ok) {
-    if (chartCache[ticker] && chartCache[ticker].data) {
-      return chartCache[ticker].data;
-    }
-
-    const errorBody = await response.text();
-    throw new Error(
-      `Polygon chart request failed for ${ticker}: ${response.status} ${errorBody}`
-    );
-  }
-
   const data = await response.json();
 
-  if (!data.results || !Array.isArray(data.results) || data.results.length === 0) {
-    throw new Error(`No chart data for ${ticker}`);
+  if (!response.ok) {
+    throw new Error(data.error || data.message || "Failed to fetch chart data");
   }
 
-  const filtered = data.results.slice(-10);
+  setCached(chartCache, ticker, data);
+  return data;
+}
 
-  const result = {
-    ticker,
-    points: filtered.map(bar => ({
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.get("/api/stock/:ticker", async (req, res) => {
+  try {
+    const ticker = req.params.ticker.toUpperCase();
+    const data = await fetchPrevStock(ticker);
+    res.json(data);
+  } catch (error) {
+    console.error("Stock route error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/chart/:ticker", async (req, res) => {
+  try {
+    const ticker = req.params.ticker.toUpperCase();
+    const data = await fetchChartData(ticker);
+    if (!data.results || data.results.length === 0) {
+      return res.status(404).json({ error: 'No chart data' });
+    }
+    const points = data.results.map(bar => ({
       time: new Date(bar.t).toLocaleDateString(),
-      price: Number(bar.c)
-    }))
-  };
-
-  chartCache[ticker] = {
-    data: result,
-    timestamp: Date.now()
-  };
-
-  return result;
-}
-
-async function fetchNewsData(ticker) {
-  if (
-    newsCache[ticker] &&
-    Date.now() - newsCache[ticker].timestamp < 30 * 60 * 1000
-  ) {
-    return newsCache[ticker].data;
-  }
-
-  const query = encodeURIComponent(getNewsQuery(ticker));
-  const url = `${NEWS_URL}?q=${query}&language=en&pageSize=5&sortBy=publishedAt&apiKey=${NEWS_API_KEY}`;
-
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `News request failed for ${ticker}: ${response.status} ${errorBody}`
-    );
-  }
-
-  const data = await response.json();
-
-  if (!data.articles || !Array.isArray(data.articles)) {
-    throw new Error(`No news data for ${ticker}`);
-  }
-
-  const articles = data.articles.slice(0, 5).map(article => ({
-    title: article.title || 'No title',
-    source: article.source?.name || 'Unknown source',
-    url: article.url || '#',
-    publishedAt: article.publishedAt || null,
-    sentiment: analyzeHeadlineSentiment(article.title || '')
-  }));
-
-  const result = {
-    ticker,
-    summary: summarizeNewsSentiment(articles),
-    articles
-  };
-
-  newsCache[ticker] = {
-    data: result,
-    timestamp: Date.now()
-  };
-
-  return result;
-}
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/api/stock/:ticker', async (req, res) => {
-  const ticker = req.params.ticker.toUpperCase();
-
-  try {
-    const stock = await fetchPreviousClose(ticker);
-    const holding = portfolio[ticker];
-
-    const totalCost = holding ? holding.shares * holding.costPerShare : 0;
-    const currentValue = holding ? holding.shares * stock.price : 0;
-    const pnlPercent =
-      holding && totalCost > 0 ? ((currentValue - totalCost) / totalCost) * 100 : 0;
-
-    const result = {
-      ticker,
-      price: stock.price.toFixed(2),
-      portfolio: holding
-        ? {
-            shares: holding.shares,
-            costPerShare: holding.costPerShare,
-            totalCost: totalCost.toFixed(2),
-            currentValue: currentValue.toFixed(2),
-            pnlPercent: pnlPercent.toFixed(1)
-          }
-        : null,
-      rating: calculateRating(
-        ticker,
-        stock.price,
-        holding?.costPerShare || stock.price,
-        pnlPercent
-      )
-    };
-
-    res.json(result);
+      price: bar.c
+    }));
+    res.json({ points });
   } catch (error) {
-    res.status(500).json({
-      error: 'API failed',
-      details: error.message
-    });
+    console.error("Chart route error:", error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/chart/:ticker', async (req, res) => {
-  const ticker = req.params.ticker.toUpperCase();
-
+app.get("/api/news/:ticker", async (req, res) => {
   try {
-    const chart = await fetchChartData(ticker);
-    res.json(chart);
+    const ticker = req.params.ticker.toUpperCase();
+    let articles = await fetchRelevantNews(ticker);
+    // Add default neutral sentiment if missing
+    articles = articles.map(article => ({
+      ...article,
+      sentiment: { label: "Neutral" }
+    }));
+    res.json({
+      articles,
+      summary: articles.length > 0 ? `Top news for ${ticker}` : "No news found."
+    });
   } catch (error) {
-    if (error.message.includes('429')) {
-      chartCache[ticker] = {
-        ...chartCache[ticker],
-        errorUntil: Date.now() + 60 * 1000
-      };
-    }
-
-    res.status(500).json({
-      error: 'Chart API failed',
-      details: error.message
-    });
+    console.error("News route error:", error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/news/:ticker', async (req, res) => {
-  const ticker = req.params.ticker.toUpperCase();
+app.get("/api/dashboard", async (req, res) => {
+  const results = {};
 
-  try {
-    const news = await fetchNewsData(ticker);
-    res.json(news);
-  } catch (error) {
-    res.status(500).json({
-      error: 'News API failed',
-      details: error.message
-    });
-  }
-});
+  for (const ticker of Object.keys(portfolio)) {
+    try {
+      const stockData = await fetchPrevStock(ticker);
 
-app.get('/api/dashboard', async (req, res) => {
-  try {
-    const tickers = Object.keys(portfolio);
-    const results = {};
+      if (stockData.results && stockData.results.length > 0) {
+        const latest = stockData.results[0];
+        const price = latest.c;
 
-    for (const ticker of tickers) {
-      try {
-        const stock = await fetchPreviousClose(ticker);
         const holding = portfolio[ticker];
-
         const totalCost = holding.shares * holding.costPerShare;
-        const currentValue = holding.shares * stock.price;
+        const currentValue = holding.shares * price;
         const pnlPercent = ((currentValue - totalCost) / totalCost) * 100;
 
         results[ticker] = {
           ticker,
-          price: stock.price.toFixed(2),
+          price: price.toFixed(2),
           portfolio: {
             shares: holding.shares,
             costPerShare: holding.costPerShare,
@@ -381,32 +200,20 @@ app.get('/api/dashboard', async (req, res) => {
             currentValue: currentValue.toFixed(2),
             pnlPercent: pnlPercent.toFixed(1)
           },
-          rating: calculateRating(
-            ticker,
-            stock.price,
-            holding.costPerShare,
-            pnlPercent
-          )
+          rating: calculateRating(ticker, price, holding.costPerShare, pnlPercent)
         };
-
-        await sleep(250);
-      } catch (error) {
-        results[ticker] = {
-          ticker,
-          error: error.message
-        };
+      } else {
+        results[ticker] = { error: "No price data" };
       }
+    } catch (error) {
+      console.error(`Dashboard error for ${ticker}:`, error.message);
+      results[ticker] = { error: error.message };
     }
-
-    res.json(results);
-  } catch (error) {
-    res.status(500).json({
-      error: 'Dashboard API failed',
-      details: error.message
-    });
   }
+
+  res.json(results);
 });
 
-app.listen(port, () => {
-  console.log(`🚀 InsightRail LIVE on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`🚀 InsightRail running at http://localhost:${PORT}`);
 });
