@@ -4,8 +4,11 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
-const API_KEY = 'HLaWIwqgorCAyVlFSUWY59fGXIX5eDMY';
+const POLYGON_API_KEY = 'HLaWIwqgorCAyVlFSUWY59fGXIX5eDMY';
+const NEWS_API_KEY = '904f4a0367e241fbb9f82cbdc1489984';
+
 const POLYGON_URL = 'https://api.polygon.io';
+const NEWS_URL = 'https://newsapi.org/v2/everything';
 
 app.use(express.static('public'));
 app.use(express.json());
@@ -18,6 +21,7 @@ const portfolio = {
 
 const priceCache = {};
 const chartCache = {};
+const newsCache = {};
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -72,6 +76,57 @@ function calculateRating(ticker, price, costPerShare, pnlPercent) {
   };
 }
 
+function getNewsQuery(ticker) {
+  const map = {
+    AAPL: 'Apple OR AAPL',
+    MSFT: 'Microsoft OR MSFT',
+    SPY: 'S&P 500 OR SPY OR ETF market'
+  };
+  return map[ticker] || ticker;
+}
+
+function analyzeHeadlineSentiment(title = '') {
+  const text = title.toLowerCase();
+
+  const positiveWords = [
+    'beat', 'beats', 'surge', 'soar', 'gain', 'gains', 'upgrade', 'upgrades',
+    'strong', 'growth', 'record', 'bullish', 'rally', 'profit', 'profits',
+    'outperform', 'buy rating', 'expands', 'optimistic'
+  ];
+
+  const negativeWords = [
+    'miss', 'misses', 'drop', 'drops', 'fall', 'falls', 'downgrade', 'downgrades',
+    'weak', 'warning', 'lawsuit', 'bearish', 'selloff', 'decline', 'loss',
+    'losses', 'cuts', 'cut', 'slump', 'recession', 'investigation'
+  ];
+
+  let score = 0;
+
+  positiveWords.forEach(word => {
+    if (text.includes(word)) score += 1;
+  });
+
+  negativeWords.forEach(word => {
+    if (text.includes(word)) score -= 1;
+  });
+
+  if (score > 0) return { label: 'Positive', score };
+  if (score < 0) return { label: 'Negative', score };
+  return { label: 'Neutral', score: 0 };
+}
+
+function summarizeNewsSentiment(articles) {
+  let total = 0;
+
+  for (const article of articles) {
+    total += article.sentiment.score;
+  }
+
+  if (total > 1) return 'Mostly positive news flow';
+  if (total < -1) return 'Mostly negative news flow';
+  return 'Mixed or neutral news flow';
+}
+
 async function fetchPreviousClose(ticker) {
   if (
     priceCache[ticker] &&
@@ -81,7 +136,7 @@ async function fetchPreviousClose(ticker) {
   }
 
   const response = await fetch(
-    `${POLYGON_URL}/v2/aggs/ticker/${ticker}/prev?adjusted=true&apikey=${API_KEY}`
+    `${POLYGON_URL}/v2/aggs/ticker/${ticker}/prev?adjusted=true&apikey=${POLYGON_API_KEY}`
   );
 
   if (!response.ok) {
@@ -136,7 +191,7 @@ async function fetchChartData(ticker) {
   const toStr = to.toISOString().split('T')[0];
 
   const response = await fetch(
-    `${POLYGON_URL}/v2/aggs/ticker/${ticker}/range/1/day/${fromStr}/${toStr}?adjusted=true&sort=asc&apikey=${API_KEY}`
+    `${POLYGON_URL}/v2/aggs/ticker/${ticker}/range/1/day/${fromStr}/${toStr}?adjusted=true&sort=asc&apikey=${POLYGON_API_KEY}`
   );
 
   if (!response.ok) {
@@ -167,6 +222,54 @@ async function fetchChartData(ticker) {
   };
 
   chartCache[ticker] = {
+    data: result,
+    timestamp: Date.now()
+  };
+
+  return result;
+}
+
+async function fetchNewsData(ticker) {
+  if (
+    newsCache[ticker] &&
+    Date.now() - newsCache[ticker].timestamp < 30 * 60 * 1000
+  ) {
+    return newsCache[ticker].data;
+  }
+
+  const query = encodeURIComponent(getNewsQuery(ticker));
+  const url = `${NEWS_URL}?q=${query}&language=en&pageSize=5&sortBy=publishedAt&apiKey=${NEWS_API_KEY}`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `News request failed for ${ticker}: ${response.status} ${errorBody}`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data.articles || !Array.isArray(data.articles)) {
+    throw new Error(`No news data for ${ticker}`);
+  }
+
+  const articles = data.articles.slice(0, 5).map(article => ({
+    title: article.title || 'No title',
+    source: article.source?.name || 'Unknown source',
+    url: article.url || '#',
+    publishedAt: article.publishedAt || null,
+    sentiment: analyzeHeadlineSentiment(article.title || '')
+  }));
+
+  const result = {
+    ticker,
+    summary: summarizeNewsSentiment(articles),
+    articles
+  };
+
+  newsCache[ticker] = {
     data: result,
     timestamp: Date.now()
   };
@@ -235,6 +338,20 @@ app.get('/api/chart/:ticker', async (req, res) => {
 
     res.status(500).json({
       error: 'Chart API failed',
+      details: error.message
+    });
+  }
+});
+
+app.get('/api/news/:ticker', async (req, res) => {
+  const ticker = req.params.ticker.toUpperCase();
+
+  try {
+    const news = await fetchNewsData(ticker);
+    res.json(news);
+  } catch (error) {
+    res.status(500).json({
+      error: 'News API failed',
       details: error.message
     });
   }
