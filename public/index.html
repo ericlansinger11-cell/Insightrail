@@ -238,19 +238,31 @@
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>🚀 InsightRail</h1>
-    <p>AI Trading Dashboard - Live Data</p>
+  <div class="header" style="margin-bottom:0;">
+    <h1 style="font-family:'Orbitron',sans-serif;font-size:2.7rem;letter-spacing:2px;text-shadow:0 2px 24px #3b82f6,0 0 2px #fff;">🚀 InsightRail</h1>
+    <p style="font-size:1.25rem;opacity:0.93;letter-spacing:1px;">Futuristic AI Trading Dashboard</p>
   </div>
 
-  <div class="controls">
-    <button id="refreshBtn" onclick="loadPortfolio()">🔄 Refresh Ratings</button>
+  <div id="landing" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:55vh;text-align:center;">
+    <h2 style="font-family:'Orbitron',sans-serif;font-size:2.1rem;margin-bottom:18px;color:#60a5fa;text-shadow:0 2px 16px #1e293b;">Welcome to InsightRail</h2>
+    <p style="font-size:1.15rem;max-width:480px;margin-bottom:32px;opacity:0.92;">Your gateway to live stock analytics, AI-powered news sentiment, and beautiful charts. Start by searching for a stock ticker above.</p>
+    <div style="margin-top:18px;">
+      <span style="font-size:1.5rem;color:#3b82f6;">🔍</span>
+      <span style="font-size:1.1rem;color:#94a3b8;">Type a ticker in the search bar to begin</span>
+    </div>
+  </div>
+
+  <div class="controls" style="display:flex; align-items:center; justify-content:center; gap:18px; flex-wrap:wrap; margin-bottom:36px;">
+    <button id="refreshBtn" onclick="refreshSelectedStock()">🔄 Refresh Ratings</button>
     <button onclick="toggleTheme()">🌙 Dark/Light</button>
+    <div style="position:relative; min-width:220px;">
+      <input id="stockSearch" type="text" placeholder="Search stocks..." autocomplete="off" style="padding:10px 16px; border-radius:10px; border:1px solid #e5e7eb; font-size:16px; min-width:180px; box-shadow:0 2px 8px rgba(0,0,0,0.06); outline:none; transition:box-shadow 0.2s;" oninput="showSuggestions()" onfocus="showSuggestions()" onblur="setTimeout(hideSuggestions, 150)">
+      <ul id="suggestions" style="position:absolute; left:0; right:0; top:44px; background:#18181b; color:#fff; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.13); z-index:10; list-style:none; margin:0; padding:0; display:none; max-height:220px; overflow-y:auto;"></ul>
+    </div>
   </div>
-
-  <div id="portfolio" class="loading">⏳ Loading live dashboard...</div>
-  <div id="chartArea"></div>
-  <div id="newsArea"></div>
+  <div id="portfolio" style="display:none;"></div>
+  <div id="chartArea" style="display:none;"></div>
+  <div id="newsArea" style="display:none;"></div>
 
   <script>
     let isLoading = false;
@@ -259,9 +271,49 @@
     let selectedTicker = null;
     let dashboardData = null;
 
+    // --- Autocomplete Search Bar ---
+    const STOCKS = [
+      "AAPL", "MSFT", "SPY", "TSLA", "NVDA", "AMZN", "GOOGL", "META", "NFLX", "AMD"
+    ];
+    function showSuggestions() {
+      const input = document.getElementById('stockSearch');
+      const ul = document.getElementById('suggestions');
+      const val = input.value.trim().toUpperCase();
+      ul.innerHTML = '';
+      if (!val) {
+        ul.style.display = 'none';
+        return;
+      }
+      const matches = STOCKS.filter(ticker => ticker.startsWith(val));
+      if (matches.length === 0) {
+        ul.style.display = 'none';
+        return;
+      }
+      matches.forEach(ticker => {
+        const li = document.createElement('li');
+        li.textContent = ticker;
+        li.style.padding = '10px 18px';
+        li.style.cursor = 'pointer';
+        li.style.fontWeight = '600';
+        li.onmousedown = () => {
+          input.value = ticker;
+          ul.style.display = 'none';
+          showChart(ticker);
+        };
+        li.onmouseover = () => li.style.background = '#27272a';
+        li.onmouseout = () => li.style.background = 'none';
+        ul.appendChild(li);
+      });
+      ul.style.display = 'block';
+    }
+    function hideSuggestions() {
+      document.getElementById('suggestions').style.display = 'none';
+    }
+
     async function loadDashboard() {
       try {
-        const res = await fetch('/api/dashboard');
+        if (!selectedTicker) return null;
+        const res = await fetch(`/api/dashboard?ticker=${selectedTicker}`);
         return await res.json();
       } catch (e) {
         return null;
@@ -348,72 +400,95 @@
       return 'sentiment-neutral';
     }
 
+
     async function showChart(ticker) {
+      // Hide landing, show panels
+      document.getElementById('landing').style.display = 'none';
+      document.getElementById('portfolio').style.display = 'block';
+      document.getElementById('chartArea').style.display = 'block';
+      document.getElementById('newsArea').style.display = 'block';
       selectedTicker = ticker;
+      await showChartWithRange(ticker, '7d');
+      await showNews(ticker);
+      await loadPortfolio();
+    }
 
-      document.querySelectorAll('.stock-card').forEach(card => {
-        card.classList.remove('active');
-      });
-
-      const activeCard = document.getElementById(`card-${ticker}`);
-      if (activeCard) activeCard.classList.add('active');
-
+    // Helper to show chart with a specific range
+    async function showChartWithRange(ticker, range) {
+      selectedTicker = ticker;
+      // Fetch chart data for the selected range
+      let chartData;
+      try {
+        const res = await fetch(`/api/chart/${ticker}?range=${range}`);
+        chartData = await res.json();
+      } catch (e) {
+        chartData = { error: 'Chart failed to load' };
+      }
       const chartArea = document.getElementById('chartArea');
-      const newsArea = document.getElementById('newsArea');
-
+      if (chartData.error || !chartData.points || chartData.points.length === 0) {
+        chartArea.innerHTML = `
+          <div class="chart-panel">
+            <div class="chart-title">📈 ${ticker} Price Chart</div>
+            <div class="loading" style="margin-top:32px;">No chart data available for this stock and range.</div>
+          </div>
+        `;
+        return;
+      }
+      // Get dashboard data for rating class
+      if (!dashboardData) dashboardData = await loadDashboard();
+      const stockData = dashboardData[ticker];
+      const ratingClass =
+        stockData && stockData.rating && stockData.rating.rating.includes('BUY') ? 'buy' :
+        stockData && stockData.rating && stockData.rating.rating.includes('SELL') ? 'sell' : 'hold';
       chartArea.innerHTML = `
         <div class="chart-panel">
           <div class="chart-title">📈 ${ticker} Price Chart</div>
-          <div class="loading">⏳ Loading chart...</div>
+          <div class="chart-range-controls" style="margin-bottom:10px;">
+            <button class="range-btn" data-range="7d">7D</button>
+            <button class="range-btn" data-range="1m">1M</button>
+            <button class="range-btn" data-range="3m">3M</button>
+          </div>
+          <div class="chart-container">
+            <canvas id="mainChart"></canvas>
+          </div>
         </div>
       `;
+      // Highlight active range button and set event listeners
+      requestAnimationFrame(() => {
+        document.querySelectorAll('.range-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-range') === range);
+          btn.onclick = async function() {
+            if (range !== this.getAttribute('data-range')) {
+              await showChartWithRange(ticker, this.getAttribute('data-range'));
+            }
+          };
+        });
+      });
+      const labels = chartData.points.map(point => point.time);
+      const prices = chartData.points.map(point => point.price);
+      const canvas = document.getElementById('mainChart');
+      createChart(ticker, canvas, labels, prices, ratingClass);
+    }
 
+    async function showNews(ticker) {
+      const newsArea = document.getElementById('newsArea');
       newsArea.innerHTML = `
         <div class="news-panel">
           <div class="news-title">📰 ${ticker} News</div>
           <div class="loading">⏳ Loading news...</div>
         </div>
       `;
-
-      const [chartData, newsData] = await Promise.all([
-        loadChart(ticker),
-        loadNews(ticker)
-      ]);
-
-      if (chartData.error || !chartData.points) {
-        chartArea.innerHTML = `
-          <div class="error-card">
-            <strong>${ticker}</strong><br>
-            ${chartData.details || chartData.error || 'No chart data'}
-          </div>
-        `;
-      } else {
-        const stockData = dashboardData[ticker];
-        const ratingClass =
-          stockData.rating.rating.includes('BUY') ? 'buy' :
-          stockData.rating.rating.includes('SELL') ? 'sell' : 'hold';
-
-        chartArea.innerHTML = `
-          <div class="chart-panel">
-            <div class="chart-title">📈 ${ticker} Price Chart</div>
-            <div class="chart-container">
-              <canvas id="mainChart"></canvas>
-            </div>
-          </div>
-        `;
-
-        const labels = chartData.points.map(point => point.time);
-        const prices = chartData.points.map(point => point.price);
-        const canvas = document.getElementById('mainChart');
-
-        createChart(ticker, canvas, labels, prices, ratingClass);
+      let newsData;
+      try {
+        newsData = await loadNews(ticker);
+      } catch (e) {
+        newsData = { error: 'News failed to load' };
       }
-
       if (newsData.error || !newsData.articles) {
         newsArea.innerHTML = `
-          <div class="error-card">
-            <strong>${ticker}</strong><br>
-            ${newsData.details || newsData.error || 'No news data'}
+          <div class="news-panel">
+            <div class="news-title">📰 ${ticker} News</div>
+            <div class="news-summary">No news data available.</div>
           </div>
         `;
       } else {
@@ -426,9 +501,6 @@
                 <a class="news-link" href="${article.url}" target="_blank" rel="noopener noreferrer">
                   ${article.title}
                 </a>
-                <span class="sentiment-tag ${sentimentClass(article.sentiment.label)}">
-                  ${article.sentiment.label}
-                </span>
                 <div class="news-meta">
                   ${article.source} • ${article.publishedAt ? new Date(article.publishedAt).toLocaleString() : 'Unknown time'}
                 </div>
@@ -439,74 +511,54 @@
       }
     }
 
+    async function refreshSelectedStock() {
+      if (!selectedTicker) return;
+      await showChartWithRange(selectedTicker, '7d');
+      await showNews(selectedTicker);
+    }
+
     async function loadPortfolio() {
       if (isLoading) return;
       isLoading = true;
-
       const refreshBtn = document.getElementById('refreshBtn');
       refreshBtn.disabled = true;
       refreshBtn.textContent = '⏳ Loading...';
-
       const portfolioDiv = document.getElementById('portfolio');
-      portfolioDiv.innerHTML = '<div class="loading">⏳ Loading live dashboard...</div>';
-
+      portfolioDiv.innerHTML = '';
       try {
         const results = await loadDashboard();
         dashboardData = results;
-
         if (!results) {
-          portfolioDiv.innerHTML = '<div class="error-card">Failed to load dashboard.</div>';
+          portfolioDiv.innerHTML = '';
           return;
         }
-
-        let html = '<div class="portfolio-grid">';
-
-        for (const ticker in results) {
-          const data = results[ticker];
-
-          if (data.error) {
-            html += `
-              <div class="error-card">
-                <strong>${ticker}</strong><br>
-                ${data.error}
-              </div>
-            `;
-            continue;
-          }
-
+        let html = '<div class="portfolio-grid" style="gap:32px 24px;">';
+        // Only show selected stock if any
+        if (selectedTicker && results[selectedTicker]) {
+          const data = results[selectedTicker];
           const ratingClass =
             data.rating.rating.includes('BUY') ? 'buy' :
             data.rating.rating.includes('SELL') ? 'sell' : 'hold';
-
           html += `
-            <div class="stock-card ${ratingClass}" id="card-${ticker}" onclick="showChart('${ticker}')">
-              <div class="ticker">${ticker}</div>
+            <div class="stock-card ${ratingClass}" id="card-${selectedTicker}" onclick="showChart('${selectedTicker}')">
+              <div class="ticker">${selectedTicker}</div>
               <div class="price">$${data.price}</div>
               <div class="confidence">
                 ${data.rating.rating} (${data.rating.confidence})
               </div>
-
               <div class="meta">Shares: ${data.portfolio.shares}</div>
               <div class="meta">Cost Basis: $${data.portfolio.costPerShare}</div>
               <div class="meta">P&L: ${data.portfolio.pnlPercent}%</div>
-
               <div class="reasons">
                 ${data.rating.reasons.map(reason => `<div class="reason">${reason}</div>`).join('')}
               </div>
             </div>
           `;
         }
-
         html += '</div>';
         portfolioDiv.innerHTML = html;
-
-        document.getElementById('chartArea').innerHTML = `
-          <div class="loading">Click a stock to view chart 📊</div>
-        `;
-
-        document.getElementById('newsArea').innerHTML = '';
       } catch (err) {
-        portfolioDiv.innerHTML = '<div class="error-card">Failed to load dashboard.</div>';
+        portfolioDiv.innerHTML = '';
       } finally {
         isLoading = false;
         refreshBtn.disabled = false;
@@ -523,7 +575,12 @@
       }
     }
 
-    loadPortfolio();
+    // On load, show landing only
+    document.getElementById('portfolio').style.display = 'none';
+    document.getElementById('chartArea').style.display = 'none';
+    document.getElementById('newsArea').style.display = 'none';
+    // Only show portfolio/news/chart after a stock is selected
+    // When a stock is selected, call showChart(ticker)
   </script>
 </body>
 </html>
