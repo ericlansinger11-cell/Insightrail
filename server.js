@@ -114,6 +114,15 @@ async function fetchPreviousClose(ticker) {
 async function fetchChartData(ticker) {
   if (
     chartCache[ticker] &&
+    chartCache[ticker].errorUntil &&
+    Date.now() < chartCache[ticker].errorUntil
+  ) {
+    throw new Error('Rate limited - please wait');
+  }
+
+  if (
+    chartCache[ticker] &&
+    chartCache[ticker].data &&
     Date.now() - chartCache[ticker].timestamp < 60 * 60 * 1000
   ) {
     return chartCache[ticker].data;
@@ -131,6 +140,10 @@ async function fetchChartData(ticker) {
   );
 
   if (!response.ok) {
+    if (chartCache[ticker] && chartCache[ticker].data) {
+      return chartCache[ticker].data;
+    }
+
     const errorBody = await response.text();
     throw new Error(
       `Polygon chart request failed for ${ticker}: ${response.status} ${errorBody}`
@@ -213,6 +226,13 @@ app.get('/api/chart/:ticker', async (req, res) => {
     const chart = await fetchChartData(ticker);
     res.json(chart);
   } catch (error) {
+    if (error.message.includes('429')) {
+      chartCache[ticker] = {
+        ...chartCache[ticker],
+        errorUntil: Date.now() + 60 * 1000
+      };
+    }
+
     res.status(500).json({
       error: 'Chart API failed',
       details: error.message

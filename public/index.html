@@ -386,14 +386,9 @@
         html += '</div>';
         portfolioDiv.innerHTML = html;
 
-        const firstGoodTicker = Object.keys(results).find(t => !results[t].error);
-        if (selectedTicker && results[selectedTicker] && !results[selectedTicker].error) {
-          showChart(selectedTicker);
-        } else if (firstGoodTicker) {
-          showChart(firstGoodTicker);
-        } else {
-          document.getElementById('chartArea').innerHTML = '';
-        }
+        document.getElementById('chartArea').innerHTML = `
+          <div class="loading">Click a stock to view chart 📊</div>
+        `;
       } catch (err) {
         portfolioDiv.innerHTML = '<div class="error-card">Failed to load dashboard.</div>';
       } finally {
@@ -407,7 +402,7 @@
       isDark = !isDark;
       document.body.classList.toggle('light-mode', !isDark);
 
-      if (selectedTicker && dashboardData && dashboardData[selectedTicker] && !dashboardData[selectedTicker].error) {
+      if (selectedTicker && chartInstance) {
         showChart(selectedTicker);
       }
     }
