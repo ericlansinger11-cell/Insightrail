@@ -107,20 +107,21 @@ async function fetchPrevStock(ticker) {
 async function fetchChartData(ticker, range) {
   // Map range to {multiplier, timespan, from, to, limit}
   const now = new Date();
-  let from, multiplier = 1, timespan = 'day', limit = 7;
+  let from, multiplier = 1, timespan = 'day', limit = 7, fetchDays = 14;
   if (range === '7d') {
-    from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    fetchDays = 14; // fetch 2x to cover weekends/holidays
     limit = 7;
   } else if (range === '1m') {
-    from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    fetchDays = 45;
     limit = 30;
   } else if (range === '3m') {
-    from = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    fetchDays = 120;
     limit = 90;
   } else {
-    from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    fetchDays = 14;
     limit = 7;
   }
+  from = new Date(now.getTime() - fetchDays * 24 * 60 * 60 * 1000);
   const to = now;
   const fromStr = from.toISOString().slice(0, 10);
   const toStr = to.toISOString().slice(0, 10);
@@ -129,11 +130,15 @@ async function fetchChartData(ticker, range) {
   const cached = getCached(chartCache, cacheKey, CHART_TTL);
   if (cached) return cached;
 
-  const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${fromStr}/${toStr}?adjusted=true&sort=asc&limit=${limit}&apiKey=${process.env.POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${fromStr}/${toStr}?adjusted=true&sort=asc&limit=120&apiKey=${process.env.POLYGON_API_KEY}`;
   const response = await fetch(url);
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || data.message || "Failed to fetch chart data");
+  }
+  // Only keep the last N trading days
+  if (data.results && Array.isArray(data.results)) {
+    data.results = data.results.slice(-limit);
   }
   setCached(chartCache, cacheKey, data);
   return data;
