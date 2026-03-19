@@ -114,14 +114,14 @@ async function fetchPreviousClose(ticker) {
 async function fetchChartData(ticker) {
   if (
     chartCache[ticker] &&
-    Date.now() - chartCache[ticker].timestamp < 15 * 60 * 1000
+    Date.now() - chartCache[ticker].timestamp < 60 * 60 * 1000
   ) {
     return chartCache[ticker].data;
   }
 
   const to = new Date();
   const from = new Date();
-  from.setDate(to.getDate() - 45);
+  from.setDate(to.getDate() - 60);
 
   const fromStr = from.toISOString().split('T')[0];
   const toStr = to.toISOString().split('T')[0];
@@ -143,7 +143,7 @@ async function fetchChartData(ticker) {
     throw new Error(`No chart data for ${ticker}`);
   }
 
-  const filtered = data.results.slice(-8);
+  const filtered = data.results.slice(-10);
 
   const result = {
     ticker,
@@ -228,12 +228,8 @@ app.get('/api/dashboard', async (req, res) => {
     for (const ticker of tickers) {
       try {
         const stock = await fetchPreviousClose(ticker);
-
-        await sleep(400);
-
-        const chart = await fetchChartData(ticker);
-
         const holding = portfolio[ticker];
+
         const totalCost = holding.shares * holding.costPerShare;
         const currentValue = holding.shares * stock.price;
         const pnlPercent = ((currentValue - totalCost) / totalCost) * 100;
@@ -253,11 +249,10 @@ app.get('/api/dashboard', async (req, res) => {
             stock.price,
             holding.costPerShare,
             pnlPercent
-          ),
-          chart: chart.points
+          )
         };
 
-        await sleep(400);
+        await sleep(250);
       } catch (error) {
         results[ticker] = {
           ticker,
