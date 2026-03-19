@@ -104,21 +104,38 @@ async function fetchPrevStock(ticker) {
   return data;
 }
 
-async function fetchChartData(ticker) {
-  const cached = getCached(chartCache, ticker, CHART_TTL);
+async function fetchChartData(ticker, range) {
+  // Map range to {multiplier, timespan, from, to, limit}
+  const now = new Date();
+  let from, multiplier = 1, timespan = 'day', limit = 7;
+  if (range === '7d') {
+    from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    limit = 7;
+  } else if (range === '1m') {
+    from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    limit = 30;
+  } else if (range === '3m') {
+    from = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    limit = 90;
+  } else {
+    from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    limit = 7;
+  }
+  const to = now;
+  const fromStr = from.toISOString().slice(0, 10);
+  const toStr = to.toISOString().slice(0, 10);
+  // Cache key includes range
+  const cacheKey = `${ticker}_${range}`;
+  const cached = getCached(chartCache, cacheKey, CHART_TTL);
   if (cached) return cached;
 
-  const response = await fetch(
-    `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/1/day/2025-01-01/2026-12-31?adjusted=true&sort=asc&limit=120&apiKey=${process.env.POLYGON_API_KEY}`
-  );
-
+  const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${fromStr}/${toStr}?adjusted=true&sort=asc&limit=${limit}&apiKey=${process.env.POLYGON_API_KEY}`;
+  const response = await fetch(url);
   const data = await response.json();
-
   if (!response.ok) {
     throw new Error(data.error || data.message || "Failed to fetch chart data");
   }
-
-  setCached(chartCache, ticker, data);
+  setCached(chartCache, cacheKey, data);
   return data;
 }
 
@@ -140,7 +157,8 @@ app.get("/api/stock/:ticker", async (req, res) => {
 app.get("/api/chart/:ticker", async (req, res) => {
   try {
     const ticker = req.params.ticker.toUpperCase();
-    const data = await fetchChartData(ticker);
+    const range = req.query.range || '7d';
+    const data = await fetchChartData(ticker, range);
     if (!data.results || data.results.length === 0) {
       return res.status(404).json({ error: 'No chart data' });
     }
@@ -175,23 +193,21 @@ app.get("/api/news/:ticker", async (req, res) => {
 });
 
 app.get("/api/dashboard", async (req, res) => {
+  const { ticker } = req.query;
   const results = {};
-
-  for (const ticker of Object.keys(portfolio)) {
+  const tickers = ticker ? [ticker.toUpperCase()] : Object.keys(portfolio);
+  for (const t of tickers) {
     try {
-      const stockData = await fetchPrevStock(ticker);
-
+      const stockData = await fetchPrevStock(t);
       if (stockData.results && stockData.results.length > 0) {
         const latest = stockData.results[0];
         const price = latest.c;
-
-        const holding = portfolio[ticker];
+        const holding = portfolio[t];
         const totalCost = holding.shares * holding.costPerShare;
         const currentValue = holding.shares * price;
         const pnlPercent = ((currentValue - totalCost) / totalCost) * 100;
-
-        results[ticker] = {
-          ticker,
+        results[t] = {
+          ticker: t,
           price: price.toFixed(2),
           portfolio: {
             shares: holding.shares,
@@ -200,17 +216,16 @@ app.get("/api/dashboard", async (req, res) => {
             currentValue: currentValue.toFixed(2),
             pnlPercent: pnlPercent.toFixed(1)
           },
-          rating: calculateRating(ticker, price, holding.costPerShare, pnlPercent)
+          rating: calculateRating(t, price, holding.costPerShare, pnlPercent)
         };
       } else {
-        results[ticker] = { error: "No price data" };
+        results[t] = { error: "No price data" };
       }
     } catch (error) {
-      console.error(`Dashboard error for ${ticker}:`, error.message);
-      results[ticker] = { error: error.message };
+      console.error(`Dashboard error for ${t}:`, error.message);
+      results[t] = { error: error.message };
     }
   }
-
   res.json(results);
 });
 

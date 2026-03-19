@@ -270,6 +270,7 @@
     let isDark = true;
     let selectedTicker = null;
     let dashboardData = null;
+    let selectedRange = '7d'; // Track selected chart range globally
 
     // --- Autocomplete Search Bar ---
     const STOCKS = [
@@ -408,7 +409,7 @@
       document.getElementById('chartArea').style.display = 'block';
       document.getElementById('newsArea').style.display = 'block';
       selectedTicker = ticker;
-      await showChartWithRange(ticker, '7d');
+      await showChartWithRange(ticker, selectedRange); // Use last selected range
       await showNews(ticker);
       await loadPortfolio();
     }
@@ -416,6 +417,7 @@
     // Helper to show chart with a specific range
     async function showChartWithRange(ticker, range) {
       selectedTicker = ticker;
+      selectedRange = range; // Update global selected range
       // Fetch chart data for the selected range
       let chartData;
       try {
@@ -458,9 +460,7 @@
         document.querySelectorAll('.range-btn').forEach(btn => {
           btn.classList.toggle('active', btn.getAttribute('data-range') === range);
           btn.onclick = async function() {
-            if (range !== this.getAttribute('data-range')) {
-              await showChartWithRange(ticker, this.getAttribute('data-range'));
-            }
+            await showChartWithRange(ticker, this.getAttribute('data-range'));
           };
         });
       });
@@ -513,7 +513,7 @@
 
     async function refreshSelectedStock() {
       if (!selectedTicker) return;
-      await showChartWithRange(selectedTicker, '7d');
+      await showChartWithRange(selectedTicker, selectedRange); // Use last selected range
       await showNews(selectedTicker);
     }
 
